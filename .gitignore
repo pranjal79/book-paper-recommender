@@ -1,0 +1,44 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Data & models (will be tracked via DVC instead of Git)
+data/raw/*
+data/processed/*
+data/external/*
+models_store/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+!models_store/.gitkeep
+
+# MLflow
+mlruns/
+mlflow.db
+
+# DVC
+.dvc/cache
+.dvc/tmp
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.log
