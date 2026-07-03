@@ -1,0 +1,33 @@
+ingestion:
+  # Books
+  books_raw_path: "data/raw/booksummaries.txt"
+  books_sample_size: 5000
+  books_output_path: "data/raw/books_raw.csv"
+
+  # arXiv
+  arxiv_raw_path: "data/raw/arxiv-metadata-oai-snapshot.json"
+  arxiv_output_path: "data/raw/papers_raw.csv"
+  arxiv_sample_size: 5000
+
+  # Only keep papers from these categories
+  arxiv_categories:
+    - cs.LG      # Machine Learning
+    - cs.CL      # Computation and Language (NLP)
+    - cs.AI      # Artificial Intelligence
+    - cs.CV      # Computer Vision
+    - cs.IR      # Information Retrieval
+    - stat.ML    # Statistics - Machine Learning
+
+preprocessing:
+  combined_raw_path: "data/processed/combined_raw.csv"
+  combined_processed_path: "data/processed/combined_processed.csv"
+
+  # Column names
+  text_column: "text"
+  cleaned_column: "text_clean"
+
+  # Cleaning options
+  min_text_length: 50
+  remove_stopwords: true
+  lemmatize: true
+  max_text_length: 1000

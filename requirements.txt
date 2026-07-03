@@ -1,3 +1,7 @@
+tqdm
+pyyaml
 pandas
 numpy
 scikit-learn
+beautifulsoup4
+lxml

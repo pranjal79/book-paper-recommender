@@ -9,13 +9,14 @@ env/
 .venv/
 
 # Jupyter
-.ipynb_checkpoints
+.ipynb_checkpoints/
 
 # Data & models (will be tracked via DVC instead of Git)
 data/raw/*
 data/processed/*
 data/external/*
 models_store/*
+
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/external/.gitkeep
@@ -42,3 +43,9 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Ignore raw dataset archives and text files
+data/raw/*.txt
+data/raw/*.json
+data/raw/*.tar
+data/raw/*.gz
