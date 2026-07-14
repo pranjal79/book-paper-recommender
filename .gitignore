@@ -49,3 +49,9 @@ data/raw/*.txt
 data/raw/*.json
 data/raw/*.tar
 data/raw/*.gz
+
+# Pipeline artifacts
+pipeline_manifest.json
+logs/
+*.log
+
