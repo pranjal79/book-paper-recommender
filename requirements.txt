@@ -14,3 +14,6 @@ python-dotenv
 gitpython
 dvc
 dvc-s3
+pytest
+pytest-cov
+flake8

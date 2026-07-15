@@ -1,0 +1,98 @@
+name: ML Pipeline — Full Run
+
+on:
+  workflow_dispatch:     # manual trigger from GitHub UI
+    inputs:
+      skip_ingestion:
+        description: "Skip ingestion stage?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      run_name:
+        description: "MLflow run name"
+        required: true
+        default: "ci_pipeline_run"
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Download NLTK + spaCy assets
+        run: |
+          python -c "
+          import nltk
+          nltk.download('stopwords')
+          nltk.download('wordnet')
+          nltk.download('omw-1.4')
+          "
+          python -m spacy download en_core_web_sm
+
+      - name: Configure DVC remote
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+        run: |
+          dvc remote modify --local origin auth basic
+          dvc remote modify --local origin user $DAGSHUB_USERNAME
+          dvc remote modify --local origin password $DAGSHUB_TOKEN
+
+      - name: Pull data from DVC remote
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+        run: dvc pull --no-run-cache || echo "DVC pull failed — continuing anyway"
+
+      - name: Update run name in params.yaml
+        run: |
+          python -c "
+          import yaml
+          with open('params.yaml') as f:
+              p = yaml.safe_load(f)
+          p['pipeline']['run_name'] = '${{ github.event.inputs.run_name }}'
+          with open('params.yaml', 'w') as f:
+              yaml.dump(p, f)
+          print('Updated run_name to: ${{ github.event.inputs.run_name }}')
+          "
+
+      - name: Run ML pipeline
+        env:
+          MLFLOW_TRACKING_URI:      ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+        run: |
+          if [ "${{ github.event.inputs.skip_ingestion }}" == "true" ]; then
+            python src/pipeline/train_pipeline.py --skip-ingestion
+          else
+            python src/pipeline/train_pipeline.py
+          fi
+
+      - name: Push artifacts to DVC remote
+        env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+        run: dvc push || echo "DVC push failed — check remote config"
+
+      - name: Upload pipeline manifest
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-manifest
+          path: pipeline_manifest.json
