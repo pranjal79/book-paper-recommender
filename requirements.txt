@@ -17,3 +17,4 @@ dvc-s3
 pytest
 pytest-cov
 flake8
+streamlit
