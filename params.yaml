@@ -52,4 +52,4 @@ features:
 pipeline:
   manifest_path: "pipeline_manifest.json"
   log_dir: "logs"
-  run_name: "baseline_run"
+  run_name: "baseline_run_v1"

@@ -9,3 +9,6 @@ sentence-transformers
 faiss-cpu
 scipy
 torch
+mlflow
+python-dotenv
+gitpython

@@ -55,3 +55,10 @@ pipeline_manifest.json
 logs/
 *.log
 
+# Environment secrets
+.env
+
+# MLflow local artifacts
+mlruns/
+mlflow.db
+

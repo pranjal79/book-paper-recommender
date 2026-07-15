@@ -32,6 +32,7 @@ from src.utils.common import load_params, ensure_dir
 from src.data.ingestion import run_ingestion
 from src.features.preprocessing import run_preprocessing
 from src.models.similarity import run_feature_extraction
+from src.pipeline.mlflow_logger import log_pipeline_run
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LOGGING SETUP
@@ -363,8 +364,23 @@ def main():
     # ── Print summary ────────────────────────────────────────────────────────
     print_summary(manifest, logger)
 
-    if not pipeline_success:
-        sys.exit(1)   # non-zero exit code so CI/CD knows it failed
+    # ── MLflow Logging ───────────────────────────────────────────────────────
+    if pipeline_success:
+        logger.info("\n📊 Logging run to MLflow / DagsHub...")
+        try:
+            run_id = log_pipeline_run(
+                manifest=manifest,
+                params=params,
+            )
+            logger.info(f"✅ MLflow run logged successfully. Run ID: {run_id}")
+        except Exception as e:
+            logger.warning(
+                f"⚠️ MLflow logging failed (pipeline still succeeded): {e}\n"
+                "Check your .env credentials and DagsHub connectivity."
+            )
+    else:
+        logger.info("⏭️ Skipping MLflow logging — pipeline did not succeed.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
