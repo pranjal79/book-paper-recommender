@@ -1,0 +1,5 @@
+outs:
+- md5: c4efa00a72da67532a6a5a101bed9091
+  size: 13123025
+  hash: md5
+  path: books_raw.csv

@@ -12,3 +12,5 @@ torch
 mlflow
 python-dotenv
 gitpython
+dvc
+dvc-s3

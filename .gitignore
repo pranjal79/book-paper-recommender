@@ -11,16 +11,18 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data & models (will be tracked via DVC instead of Git)
+# Data files — tracked by DVC, not Git
 data/raw/*
 data/processed/*
 data/external/*
-models_store/*
 
+# Allow DVC pointer files and gitkeep through
+!data/raw/*.dvc
+!data/processed/*.dvc
+!data/external/*.dvc
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/external/.gitkeep
-!models_store/.gitkeep
 
 # MLflow
 mlruns/
@@ -62,3 +64,4 @@ logs/
 mlruns/
 mlflow.db
 
+/models_store
