@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  recommender:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: book-paper-recommender
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount models_store locally so you don't rebuild image on model changes
+      - ./models_store:/app/models_store:ro
+      # Mount processed data
+      - ./data/processed:/app/data/processed:ro
+      - ./data/raw:/app/data/raw:ro
+    environment:
+      - PYTHONPATH=/app
+      # Pass MLflow credentials if needed
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-}
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USERNAME:-}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Optional: run pipeline inside Docker
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: book-paper-pipeline
+    volumes:
+      - ./data:/app/data
+      - ./models_store:/app/models_store
+      - ./logs:/app/logs
+    environment:
+      - PYTHONPATH=/app
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-}
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USERNAME:-}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD:-}
+    command: >
+      python src/pipeline/train_pipeline.py --skip-ingestion
+    profiles:
+      - pipeline   # only runs with: docker-compose --profile pipeline up

@@ -25,7 +25,11 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer
 
 # ── Make sure project root is importable ─────────────────────────────────────
+# Works both locally (app/ is one level below root)
+# and in Docker (WORKDIR /app, app/streamlit_app.py is at /app/app/)
 ROOT = Path(__file__).resolve().parents[1]
+if not (ROOT / "models_store").exists():
+    ROOT = Path("/app")
 sys.path.insert(0, str(ROOT))
 
 from src.models.similarity import query_tfidf, query_semantic
