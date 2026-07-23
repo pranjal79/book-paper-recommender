@@ -4,84 +4,57 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    TRANSFORMERS_VERBOSITY=error \
+    TOKENIZERS_PARALLELISM=false
 
 WORKDIR /app
 
-# ── System dependencies ───────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    git \
+    build-essential curl git \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Python dependencies ───────────────────────────────────────────────────────
 COPY requirements.txt .
-
 RUN pip install --upgrade pip
-
-# Install packages in groups so failures are easier to debug
 RUN pip install numpy pandas scikit-learn pyyaml tqdm requests
-
 RUN pip install nltk spacy beautifulsoup4 lxml
-
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
-
 RUN pip install sentence-transformers faiss-cpu scipy
-
 RUN pip install mlflow python-dotenv gitpython streamlit
-
 RUN pip install pytest pytest-cov flake8
 
-# ── Download NLP assets ───────────────────────────────────────────────────────
-RUN python -c "import nltk; print('nltk version:', nltk.__version__)"
-
-RUN python -c "\
-import nltk; \
-nltk.download('stopwords', quiet=True); \
-nltk.download('wordnet', quiet=True); \
-nltk.download('omw-1.4', quiet=True); \
-print('NLTK assets downloaded')"
-
+RUN python -c "import nltk; nltk.download('stopwords',quiet=True); nltk.download('wordnet',quiet=True); nltk.download('omw-1.4',quiet=True)"
 RUN python -m spacy download en_core_web_sm
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
-# Pre-download Sentence Transformer model
-RUN python -c "\
-from sentence_transformers import SentenceTransformer; \
-model = SentenceTransformer('all-MiniLM-L6-v2'); \
-print('Sentence Transformer model ready')"
-
-# ── Copy application code ─────────────────────────────────────────────────────
 COPY setup.py .
 COPY params.yaml .
 COPY src/ ./src/
 COPY app/ ./app/
+RUN sed -i 's/\r//' ./app/startup.sh
 COPY .streamlit/ ./.streamlit/
-
 RUN pip install -e .
 
-# ── Copy model artifacts ──────────────────────────────────────────────────────
-COPY models_store/ ./models_store/
+# Copy model artifacts (faiss_tfidf.index rebuilt at startup)
+COPY models_store/tfidf_vectorizer.pkl    ./models_store/tfidf_vectorizer.pkl
+COPY models_store/tfidf_matrix.npz        ./models_store/tfidf_matrix.npz
+COPY models_store/sentence_embeddings.npy ./models_store/sentence_embeddings.npy
+COPY models_store/faiss_semantic.index    ./models_store/faiss_semantic.index
+COPY models_store/metadata.csv            ./models_store/metadata.csv
+
+# Copy data CSVs
 COPY data/processed/combined_processed.csv ./data/processed/combined_processed.csv
-COPY data/raw/books_raw.csv ./data/raw/books_raw.csv
-COPY data/raw/papers_raw.csv ./data/raw/papers_raw.csv
+COPY data/raw/books_raw.csv               ./data/raw/books_raw.csv
+COPY data/raw/papers_raw.csv             ./data/raw/papers_raw.csv
 
-# ── Security: non-root user ───────────────────────────────────────────────────
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+RUN chmod +x ./app/startup.sh
 
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# ── Expose port (Render sets $PORT env var) ───────────────────────────────────
 EXPOSE 8501
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health || exit 1
 
-# Use shell form so $PORT env var is expanded at runtime
-CMD streamlit run app/streamlit_app.py \
-    --server.port=${PORT:-8501} \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --server.fileWatcherType=none \
-    --browser.gatherUsageStats=false
+CMD ["./app/startup.sh"]

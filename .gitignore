@@ -65,3 +65,15 @@ mlruns/
 mlflow.db
 
 /models_store
+
+# Allow model artifacts in Git (needed for Render deployment)
+!models_store/tfidf_vectorizer.pkl
+!models_store/tfidf_matrix.npz
+!models_store/sentence_embeddings.npy
+!models_store/faiss_semantic.index
+!models_store/metadata.csv
+
+# Allow processed data CSVs
+!data/raw/books_raw.csv
+!data/raw/papers_raw.csv
+!data/processed/combined_processed.csv
