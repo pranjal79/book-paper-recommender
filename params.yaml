@@ -33,6 +33,7 @@ preprocessing:
   max_text_length: 1000
 
 features:
+  tfidf_max_features: 3000
   processed_data_path: "data/processed/combined_processed.csv"
   text_column: "text_clean"
   models_store_dir: "models_store"
