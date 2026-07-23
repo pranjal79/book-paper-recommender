@@ -69,15 +69,19 @@ COPY data/raw/papers_raw.csv ./data/raw/papers_raw.csv
 # ── Security: non-root user ───────────────────────────────────────────────────
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
+
 USER appuser
 
+# ── Expose port (Render sets $PORT env var) ───────────────────────────────────
 EXPOSE 8501
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
-CMD ["streamlit", "run", "app/streamlit_app.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]
+# Use shell form so $PORT env var is expanded at runtime
+CMD streamlit run app/streamlit_app.py \
+    --server.port=${PORT:-8501} \
+    --server.address=0.0.0.0 \
+    --server.headless=true \
+    --server.fileWatcherType=none \
+    --browser.gatherUsageStats=false

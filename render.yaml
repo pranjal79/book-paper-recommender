@@ -1,0 +1,34 @@
+# render.yaml
+# Render Blueprint — defines the entire deployment config as code
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: book-paper-recommender
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon           # free tier available in oregon
+    plan: free               # use 'starter' for always-on ($7/mo)
+
+    # Port Streamlit listens on
+    healthCheckPath: /_stcore/health
+
+    envVars:
+      - key: PYTHONPATH
+        value: /app
+      - key: TRANSFORMERS_VERBOSITY
+        value: error
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"
+
+      # MLflow tracking (optional — app works without these)
+      - key: MLFLOW_TRACKING_URI
+        sync: false          # set manually in Render dashboard
+      - key: MLFLOW_TRACKING_USERNAME
+        sync: false
+      - key: MLFLOW_TRACKING_PASSWORD
+        sync: false
+
+    # Auto-deploy on every push to main
+    autoDeploy: true
