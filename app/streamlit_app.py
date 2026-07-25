@@ -36,6 +36,32 @@ from src.features.preprocessing import clean_text
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── Auto-download NLP assets on Streamlit Cloud ───────────────────────────────
+def _setup_nlp_assets():
+    """Download NLTK and spaCy assets if not present — needed on Streamlit Cloud."""
+    import nltk
+    try:
+        from nltk.corpus import stopwords
+        stopwords.words("english")
+    except LookupError:
+        nltk.download("stopwords", quiet=True)
+        nltk.download("wordnet", quiet=True)
+        nltk.download("omw-1.4", quiet=True)
+
+    import spacy
+    try:
+        spacy.load("en_core_web_sm")
+    except OSError:
+        import subprocess
+        import sys
+        subprocess.run(
+            [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
+            check=True,
+            capture_output=True,
+        )
+
+_setup_nlp_assets()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG  (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
