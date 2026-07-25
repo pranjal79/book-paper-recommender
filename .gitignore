@@ -64,13 +64,15 @@ logs/
 mlruns/
 mlflow.db
 
+# Ignore models_store by default
 /models_store
 
-# Allow model artifacts in Git (needed for Render deployment)
+# Allow model artifacts in Git (needed for Streamlit deployment)
 !models_store/tfidf_vectorizer.pkl
 !models_store/tfidf_matrix.npz
 !models_store/sentence_embeddings.npy
 !models_store/faiss_semantic.index
+!models_store/faiss_tfidf.index
 !models_store/metadata.csv
 
 # Allow processed data CSVs
