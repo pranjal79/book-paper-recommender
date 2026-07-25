@@ -182,14 +182,17 @@ def build_faiss_index_semantic(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def save_metadata(df: pd.DataFrame, save_dir: str):
-    """
-    Save a lightweight metadata CSV that the recommender uses to
-    look up titles/authors/categories by FAISS result index.
-    FAISS returns row indices — we map those back to human-readable info here.
-    """
     meta_cols = ["item_id", "source", "title", "authors", "category", "text"]
-    meta = df[meta_cols].reset_index(drop=True)
-    meta.index.name = "faiss_idx"   # faiss_idx == row position in the index
+    meta = df[meta_cols].copy()
+
+    # Truncate text to 500 chars to reduce file size
+    meta["text"] = meta["text"].str[:500]
+
+    # Truncate authors to 100 chars
+    meta["authors"] = meta["authors"].str[:100]
+
+    meta = meta.reset_index(drop=True)
+    meta.index.name = "faiss_idx"
 
     meta_path = os.path.join(save_dir, "metadata.csv")
     meta.to_csv(meta_path)

@@ -2,18 +2,18 @@
 streamlit_app.py
 ────────────────
 Streamlit UI for the Book & Research Paper Recommendation System.
+Memory-optimized version for Render free tier (512MB RAM).
 
-Features:
-  - TF-IDF keyword-based recommendations
-  - Semantic (Sentence Transformer) recommendations
-  - Side-by-side comparison mode
-  - Filter by source (books / papers / both)
-  - Adjustable top-N results
-  - Result cards with similarity scores
+Changes from v1:
+  - TF-IDF loads at startup (small — 2MB)
+  - Sentence Transformer loads LAZILY (only when user selects Semantic)
+  - gc.collect() after every major operation
+  - Metadata text truncated to 500 chars
 """
 
 import os
 import sys
+import gc
 import pickle
 import logging
 import numpy as np
@@ -25,8 +25,6 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer
 
 # ── Make sure project root is importable ─────────────────────────────────────
-# Works both locally (app/ is one level below root)
-# and in Docker (WORKDIR /app, app/streamlit_app.py is at /app/app/)
 ROOT = Path(__file__).resolve().parents[1]
 if not (ROOT / "models_store").exists():
     ROOT = Path("/app")
@@ -56,12 +54,12 @@ st.set_page_config(
 MODELS_DIR = os.path.join(ROOT, "models_store")
 
 PATHS = {
-    "vectorizer":      os.path.join(MODELS_DIR, "tfidf_vectorizer.pkl"),
-    "tfidf_matrix":    os.path.join(MODELS_DIR, "tfidf_matrix.npz"),
-    "embeddings":      os.path.join(MODELS_DIR, "sentence_embeddings.npy"),
-    "faiss_tfidf":     os.path.join(MODELS_DIR, "faiss_tfidf.index"),
-    "faiss_semantic":  os.path.join(MODELS_DIR, "faiss_semantic.index"),
-    "metadata":        os.path.join(MODELS_DIR, "metadata.csv"),
+    "vectorizer":     os.path.join(MODELS_DIR, "tfidf_vectorizer.pkl"),
+    "tfidf_matrix":   os.path.join(MODELS_DIR, "tfidf_matrix.npz"),
+    "embeddings":     os.path.join(MODELS_DIR, "sentence_embeddings.npy"),
+    "faiss_tfidf":    os.path.join(MODELS_DIR, "faiss_tfidf.index"),
+    "faiss_semantic": os.path.join(MODELS_DIR, "faiss_semantic.index"),
+    "metadata":       os.path.join(MODELS_DIR, "metadata.csv"),
 }
 
 SOURCE_EMOJI = {"book": "📖", "paper": "🔬"}
@@ -69,27 +67,45 @@ METHOD_COLOR = {"tfidf": "#4F8BF9", "semantic": "#F97B4F"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CACHED RESOURCE LOADERS
-# Runs only ONCE per app session — not on every interaction
 # ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_resource(show_spinner="Loading TF-IDF model...")
 def load_tfidf():
+    """Load TF-IDF vectorizer and FAISS index — small, always loaded."""
     with open(PATHS["vectorizer"], "rb") as f:
         vectorizer = pickle.load(f)
     index = faiss.read_index(PATHS["faiss_tfidf"])
+    gc.collect()
+    logger.info("TF-IDF model loaded successfully")
     return vectorizer, index
 
 
-@st.cache_resource(show_spinner="Loading Sentence Transformer model...")
+@st.cache_resource(show_spinner="Loading Semantic model (first time ~30s)...")
 def load_semantic():
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    """
+    Load Sentence Transformer — LAZY loaded only when user selects Semantic.
+    Uses float16 to halve memory usage (~90MB instead of ~180MB).
+    """
+    model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+
+    # Convert to half precision to save memory
+    try:
+        model[0].auto_model = model[0].auto_model.half()
+        logger.info("Sentence Transformer loaded in float16 mode")
+    except Exception:
+        logger.info("Sentence Transformer loaded in float32 mode")
+
     index = faiss.read_index(PATHS["faiss_semantic"])
+    gc.collect()
+    logger.info("Semantic model loaded successfully")
     return model, index
 
 
 @st.cache_resource(show_spinner="Loading metadata...")
 def load_metadata() -> pd.DataFrame:
+    """Load metadata CSV — index maps FAISS result positions to titles."""
     df = pd.read_csv(PATHS["metadata"], index_col="faiss_idx")
+    gc.collect()
     return df
 
 
@@ -109,7 +125,6 @@ def check_artifacts_exist() -> tuple[bool, list[str]]:
 def inject_css():
     st.markdown("""
     <style>
-    /* Result card */
     .rec-card {
         background: #1E2130;
         border-radius: 12px;
@@ -121,29 +136,22 @@ def inject_css():
     .rec-card:hover { transform: translateX(3px); }
     .rec-card.semantic { border-left-color: #F97B4F; }
 
-    /* Card title */
     .card-title {
         font-size: 1.05rem;
         font-weight: 700;
         color: #FAFAFA;
         margin-bottom: 4px;
     }
-
-    /* Card meta */
     .card-meta {
         font-size: 0.82rem;
         color: #9BA3B2;
         margin-bottom: 8px;
     }
-
-    /* Card preview */
     .card-preview {
         font-size: 0.88rem;
         color: #C5CAD6;
         line-height: 1.55;
     }
-
-    /* Score badge */
     .score-badge {
         display: inline-block;
         background: #2A3050;
@@ -155,8 +163,6 @@ def inject_css():
         margin-right: 6px;
     }
     .score-badge.semantic { color: #F97B4F; }
-
-    /* Source tag */
     .source-tag {
         display: inline-block;
         background: #2A3050;
@@ -165,17 +171,11 @@ def inject_css():
         font-size: 0.78rem;
         color: #9BA3B2;
     }
-
-    /* Header */
     .main-header {
         text-align: center;
         padding: 1.5rem 0 0.5rem 0;
     }
-
-    /* Divider */
     hr { border-color: #2A3050 !important; }
-
-    /* Query box label */
     .stTextArea label { font-weight: 600 !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -190,7 +190,7 @@ def render_card(row: pd.Series, rank: int, method: str):
     source   = row.get("source", "unknown")
     emoji    = SOURCE_EMOJI.get(source, "📄")
     title    = row.get("title",   "Untitled")
-    authors  = row.get("authors", "Unknown")
+    authors  = str(row.get("authors", "Unknown"))
     category = row.get("category", "—")
     text     = str(row.get("text", ""))
     preview  = text[:280] + "..." if len(text) > 280 else text
@@ -231,16 +231,12 @@ def get_recommendations(
     sem_index,
     metadata: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Run query through selected method, apply source filter,
-    return top_n results.
-    """
-    # Clean the query the same way we cleaned training text
+    """Run query through selected method, apply source filter, return top_n."""
     cleaned_query = clean_text(query, remove_stopwords=True, lemmatize=False)
     if not cleaned_query.strip():
-        cleaned_query = query   # fallback: use raw query if cleaning kills it
+        cleaned_query = query
 
-    fetch_n = top_n * 4   # fetch extra to allow for post-filtering
+    fetch_n = top_n * 4
 
     if method == "TF-IDF":
         results = query_tfidf(
@@ -252,19 +248,19 @@ def get_recommendations(
         )
     else:
         results = query_semantic(
-            query_text=query,   # semantic model works better on raw text
+            query_text=query,
             model=sem_model,
             index=sem_index,
             metadata=metadata,
             top_n=fetch_n,
         )
 
-    # ── Source filter ────────────────────────────────────────────────────────
     if source_filter == "Books only":
         results = results[results["source"] == "book"]
     elif source_filter == "Papers only":
         results = results[results["source"] == "paper"]
 
+    gc.collect()
     return results.head(top_n).reset_index(drop=True)
 
 
@@ -279,12 +275,16 @@ def render_sidebar() -> dict:
 
     method = st.sidebar.radio(
         "🔍 Recommendation Method",
-        options=["Semantic (Best Quality)", "TF-IDF (Keyword Match)", "Compare Both"],
+        options=[
+            "TF-IDF (Keyword Match)",
+            "Semantic (Best Quality)",
+            "Compare Both",
+        ],
         index=0,
         help=(
-            "**Semantic**: Uses Sentence Transformers to find meaning-based similarity.\n\n"
-            "**TF-IDF**: Finds items sharing exact keywords.\n\n"
-            "**Compare Both**: Shows results side by side."
+            "**TF-IDF**: Fast keyword-based search — loads instantly.\n\n"
+            "**Semantic**: Deep meaning search — loads on first use (~30s).\n\n"
+            "**Compare Both**: Shows both side by side."
         ),
     )
 
@@ -322,7 +322,7 @@ EXAMPLE_QUERIES = [
     "A young wizard discovers his magical powers and attends a school of witchcraft",
     "Deep learning methods for natural language processing and text classification",
     "A detective investigates a series of mysterious murders in Victorian London",
-    "Reinforcement learning agents that learn to play Atari games from raw pixels",
+    "Reinforcement learning agents that learn to play games from raw pixels",
     "A dystopian society where a totalitarian government controls all information",
     "Graph neural networks for knowledge representation and reasoning",
     "An epic fantasy quest to destroy a powerful dark artifact before evil conquers all",
@@ -360,10 +360,13 @@ def main():
         )
         st.stop()
 
-    # ── Load models ───────────────────────────────────────────────────────────
+    # ── Load lightweight models at startup ────────────────────────────────────
     vectorizer, tfidf_index = load_tfidf()
-    sem_model,  sem_index   = load_semantic()
     metadata                = load_metadata()
+
+    # Semantic model loaded lazily — only when user needs it
+    sem_model = None
+    sem_index = None
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     settings = render_sidebar()
@@ -371,15 +374,23 @@ def main():
     # Dataset stats in sidebar
     n_books  = (metadata["source"] == "book").sum()
     n_papers = (metadata["source"] == "paper").sum()
-    st.sidebar.metric("📖 Books",   f"{n_books:,}")
-    st.sidebar.metric("🔬 Papers",  f"{n_papers:,}")
-    st.sidebar.metric("📄 Total",   f"{len(metadata):,}")
+    st.sidebar.metric("📖 Books",  f"{n_books:,}")
+    st.sidebar.metric("🔬 Papers", f"{n_papers:,}")
+    st.sidebar.metric("📄 Total",  f"{len(metadata):,}")
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        "**Model**: `all-MiniLM-L6-v2`\n\n"
-        "**Index**: FAISS IndexFlatIP\n\n"
-        "**Dim**: 384 (semantic) | 10k (TF-IDF)"
+        "**TF-IDF**: 2k features, bigrams\n\n"
+        "**Semantic**: `all-MiniLM-L6-v2`\n\n"
+        "**Index**: FAISS FlatIP"
     )
+
+    # ── Memory tip for semantic ───────────────────────────────────────────────
+    if "Semantic" in settings["method"] or settings["method"] == "Compare Both":
+        st.info(
+            "💡 **Semantic search** loads a 90MB model on first use — "
+            "expect ~30 seconds on first query. Subsequent queries are instant.",
+            icon="ℹ️"
+        )
 
     # ── Query input ───────────────────────────────────────────────────────────
     col_input, col_example = st.columns([3, 1])
@@ -409,9 +420,13 @@ def main():
     # ── Search button ─────────────────────────────────────────────────────────
     col_btn, col_clear = st.columns([1, 5])
     with col_btn:
-        search_clicked = st.button("🔍 Find Similar", type="primary", use_container_width=True)
+        search_clicked = st.button(
+            "🔍 Find Similar",
+            type="primary",
+            use_container_width=True
+        )
     with col_clear:
-        if st.button("🗑️ Clear", use_container_width=False):
+        if st.button("🗑️ Clear"):
             st.rerun()
 
     st.markdown("---")
@@ -423,7 +438,12 @@ def main():
         source_filter = settings["source_filter"]
         top_n         = settings["top_n"]
 
-        # ── Single method ────────────────────────────────────────────────────
+        # ── Lazy load semantic if needed ──────────────────────────────────────
+        needs_semantic = "Semantic" in method or method == "Compare Both"
+        if needs_semantic:
+            sem_model, sem_index = load_semantic()
+
+        # ── Single method ─────────────────────────────────────────────────────
         if method != "Compare Both":
             actual_method = "Semantic" if "Semantic" in method else "TF-IDF"
             method_key    = "semantic" if actual_method == "Semantic" else "tfidf"
@@ -447,16 +467,16 @@ def main():
             else:
                 st.markdown(
                     f"### {actual_method} Results "
-                    f"<span style='color:{color};font-size:0.85rem;'>"
+                    f"<span style='color:{color}; font-size:0.85rem;'>"
                     f"({len(results)} recommendations)</span>",
                     unsafe_allow_html=True,
                 )
                 for rank, (_, row) in enumerate(results.iterrows(), start=1):
                     render_card(row, rank, method_key)
 
-        # ── Compare Both ─────────────────────────────────────────────────────
+        # ── Compare Both ──────────────────────────────────────────────────────
         else:
-            with st.spinner("Running both methods for comparison..."):
+            with st.spinner("Running both methods..."):
                 tfidf_results = get_recommendations(
                     query=query,
                     method="TF-IDF",
@@ -464,8 +484,8 @@ def main():
                     top_n=top_n,
                     vectorizer=vectorizer,
                     tfidf_index=tfidf_index,
-                    sem_model=sem_model,
-                    sem_index=sem_index,
+                    sem_model=None,
+                    sem_index=None,
                     metadata=metadata,
                 )
                 sem_results = get_recommendations(
@@ -483,35 +503,33 @@ def main():
             col_tfidf, col_sem = st.columns(2)
 
             with col_tfidf:
-                st.markdown(
-                    f"### 🔵 TF-IDF Results",
-                    unsafe_allow_html=True,
-                )
+                st.markdown("### 🔵 TF-IDF Results")
                 if tfidf_results.empty:
                     st.warning("No TF-IDF results found.")
                 else:
-                    for rank, (_, row) in enumerate(tfidf_results.iterrows(), start=1):
+                    for rank, (_, row) in enumerate(
+                        tfidf_results.iterrows(), start=1
+                    ):
                         render_card(row, rank, "tfidf")
 
             with col_sem:
-                st.markdown(
-                    f"### 🟠 Semantic Results",
-                    unsafe_allow_html=True,
-                )
+                st.markdown("### 🟠 Semantic Results")
                 if sem_results.empty:
                     st.warning("No semantic results found.")
                 else:
-                    for rank, (_, row) in enumerate(sem_results.iterrows(), start=1):
+                    for rank, (_, row) in enumerate(
+                        sem_results.iterrows(), start=1
+                    ):
                         render_card(row, rank, "semantic")
 
     elif search_clicked and not query.strip():
         st.warning("⚠️ Please enter a query before searching.")
 
     else:
-        # Landing state — show instructions
+        # ── Landing state ─────────────────────────────────────────────────────
         st.markdown("""
-        <div style="text-align:center; padding: 3rem 0; color: #9BA3B2;">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+        <div style="text-align:center; padding:3rem 0; color:#9BA3B2;">
+            <div style="font-size:3rem; margin-bottom:1rem;">🔍</div>
             <h3 style="color:#C5CAD6;">How to use this app</h3>
             <p>1. Type a book description or paper abstract in the query box above</p>
             <p>2. Or pick one of the example queries on the right</p>
@@ -519,7 +537,13 @@ def main():
             <p>4. Click <strong>Find Similar</strong> to get recommendations</p>
             <br>
             <p style="font-size:0.9rem;">
-                📖 <strong>Books</strong>: CMU Book Summaries (16k books) &nbsp;|&nbsp;
+                💡 <strong>Tip</strong>: Start with
+                <strong>TF-IDF</strong> for instant results.
+                Switch to <strong>Semantic</strong> for deeper meaning-based search.
+            </p>
+            <br>
+            <p style="font-size:0.9rem;">
+                📖 <strong>Books</strong>: CMU Book Summaries &nbsp;|&nbsp;
                 🔬 <strong>Papers</strong>: arXiv CS/ML/AI papers
             </p>
         </div>
